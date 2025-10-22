@@ -677,6 +677,9 @@ def weather():
 
 
 
+
+
+
 @app.route("/nhl")
 def nhl():
     base_url = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"
@@ -691,8 +694,8 @@ def nhl():
         resp.raise_for_status()
         return resp.json()
 
-    # --- Helper: Format events ---
-    def format_events(events, show_scores=True):
+    # --- Helper: Format events (adds checkbox reveal) ---
+    def format_events(events, show_scores=True, reveal_scores=False):
         lines = []
 
         def safe_score(team):
@@ -712,7 +715,7 @@ def nhl():
                     pass
             return ""
 
-        for ev in events:
+        for i, ev in enumerate(events):
             comp = ev.get("competitions", [{}])[0]
             teams = comp.get("competitors", [])
             if len(teams) < 2:
@@ -770,11 +773,26 @@ def nhl():
             else:
                 status_str = desc.upper() or "TBD"
 
-            # Compose final line
-            if show_scores:
-                lines.append(f"{a_name} {a_score:<2} @ {h_name} {h_score:<2}  -  {status_str}")
-            else:
+            if not show_scores:
                 lines.append(f"{a_name} @ {h_name}  {status_str}")
+                continue
+
+            if reveal_scores:
+                cid = f"rev_{a_name}_{h_name}_{i}"
+                # wrap each game line in its own container so reveal only affects that line
+                line = (
+                    f'<div class="gamerow">'
+                    f'<input id="{cid}" class="rev" type="checkbox">'
+                    f'<label for="{cid}">{a_name} </label>'
+                    f'<span class="reveal">{a_score:<2}</span>'
+                    f' @ {h_name} '
+                    f'<span class="reveal">{h_score:<2}</span>'
+                    f'  -  <span class="reveal">{status_str}</span>'
+                    f'</div>'
+                )
+                lines.append(line)
+            else:
+                lines.append(f"{a_name} {a_score:<2} @ {h_name} {h_score:<2}  -  {status_str}")
 
         return lines
 
@@ -802,13 +820,13 @@ def nhl():
         lines = []
         if sb_events and now_local.hour < 9:
             lines += ["NHL SCOREBOARD", ""]
-            lines += format_events(sb_events, show_scores=True)
+            lines += format_events(sb_events, show_scores=True, reveal_scores=False)
             lines += ["", "Today's Games:", ""]
             lines += format_events(today_events, show_scores=False)
         elif today_events:
             if any_started or any_final:
                 lines += ["NHL SCOREBOARD", ""]
-                lines += format_events(today_events, show_scores=True)
+                lines += format_events(today_events, show_scores=True, reveal_scores=True)
             else:
                 lines += ["Today's Games:", ""]
                 lines += format_events(today_events, show_scores=False)
@@ -827,7 +845,7 @@ def nhl():
     except Exception as e:
         return f"<pre>Error fetching data: {e}</pre>"
 
-    # --- HTML output (Rajdhani + submenu) ---
+    # --- HTML output ---
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -864,7 +882,6 @@ def nhl():
   }}
   .submenu a:hover {{background:{alpha(TH1,0.13)};}}
   .submenu a.active {{background:{TH1};color:#000;}}
-  
   .subnote {{
     text-align:center;
     font-size:0.8em;
@@ -874,6 +891,12 @@ def nhl():
     color:{TH1};
     font-family:'Rajdhani',sans-serif;
   }}
+
+  /* --- NEW: scoped checkbox reveal --- */
+  .gamerow {{ display:inline-block; width:100%; }}
+  .rev {{ vertical-align:middle; margin-right:.35em; transform:scale(1.0); cursor:pointer; }}
+  .gamerow .reveal {{ color:{TH3}; transition:color .15s ease; }}
+  .gamerow .rev:checked ~ .reveal {{ color:#eee; }}
 </style>
 </head>
 <body>
@@ -895,6 +918,10 @@ def nhl():
     response.headers["Pragma"] = "cache"
     response.headers["Expires"] = "30"
     return response
+
+
+
+
 
 
 
